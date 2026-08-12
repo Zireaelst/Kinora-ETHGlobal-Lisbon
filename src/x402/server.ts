@@ -6,13 +6,24 @@ import { decodePaymentResponseHeader } from "@x402/core/http";
 import { recordCompletedSale } from "../a2a/seller-executor.js";
 import { HTTPFacilitatorClient, x402ResourceServer } from "@x402/core/server";
 import type { HTTPRequestContext, RoutesConfig } from "@x402/core/server";
+import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { ExactHederaScheme } from "@x402/hedera/exact/server";
 import {
   HBAR_ASSET_ID,
   hbarToTinybar,
+  HBAR_USD_RATE,
+  hbarToUsdt0BaseUnits,
   LICENCE_GRANT_PATH,
   NETWORK,
   X402_PORT,
+  X402_XLAYER_FACILITATOR_URL,
+  X402_XLAYER_PAY_TO,
+  xlayerAdvertised,
+  xlayerRailEnabled,
+  XLAYER_TESTNET,
+  XLAYER_USDT0_ADDRESS,
+  XLAYER_USDT0_EIP712_NAME,
+  XLAYER_USDT0_EIP712_VERSION,
 } from "./config.js";
 import {
   buildLicenceGrant,
@@ -65,9 +76,29 @@ const payToAccount = requireEnv("X402_PAY_TO_ACCOUNT");
  * knows how to price a Hedera "exact" payment. `hedera:*` registers the scheme
  * for every Hedera network, so mainnet would need no code change.
  */
-const x402Server = new x402ResourceServer(
-  new HTTPFacilitatorClient({ url: facilitatorUrl }),
-).register("hedera:*", new ExactHederaScheme());
+/**
+ * One facilitator per rail. blocky402 settles Hedera; the X Layer facilitator
+ * is only added when that rail is configured, because the server validates
+ * routes against what its facilitators advertise and would refuse to boot if a
+ * quoted network had nobody behind it.
+ */
+const facilitators = [new HTTPFacilitatorClient({ url: facilitatorUrl })];
+if (xlayerAdvertised()) {
+  facilitators.push(new HTTPFacilitatorClient({ url: X402_XLAYER_FACILITATOR_URL! }));
+}
+
+const x402Server = new x402ResourceServer(facilitators).register(
+  "hedera:*",
+  new ExactHederaScheme(),
+);
+
+// Registering the scheme is what lets the route name this network at all: the
+// server refuses a route whose accepts[] cites a network it holds no scheme
+// for. It holds no key — it prices and describes the option, and the
+// facilitator above is what actually verifies and settles it.
+if (xlayerAdvertised()) {
+  x402Server.register(XLAYER_TESTNET, new ExactEvmScheme());
+}
 
 /** Reads the licence row a request names, or undefined. */
 function licenceFor(id: number): LicenceRow | undefined {
@@ -96,11 +127,46 @@ async function licenceQuote(context: HTTPRequestContext) {
   return { asset: HBAR_ASSET_ID, amount: hbarToTinybar(priceHbar) };
 }
 
-const routes: RoutesConfig = {
-  [`GET ${LICENCE_GRANT_PATH}`]: {
-    description:
-      "The licence grant for an accepted negotiation: fractional rights to a track, master reference included. Priced per licence.",
-    accepts: {
+/**
+ * The same licence, priced in USD₮0 on X Layer.
+ *
+ * Reads the same licence row and the same `quotePrice` as the Hedera quote, so
+ * the two rails can never drift into quoting different licences — only the
+ * unit differs.
+ */
+async function licenceQuoteXLayer(context: HTTPRequestContext) {
+  const raw = context.adapter.getQueryParam?.("licenceId");
+  const licence = licenceFor(Number(Array.isArray(raw) ? raw[0] : raw));
+  if (!licence) {
+    throw new Error("licenceQuoteXLayer reached without a licence — guard ordering broken");
+  }
+  const priceHbar = await quotePrice(licence.track_id, licence.shares);
+  return {
+    asset: XLAYER_USDT0_ADDRESS,
+    amount: hbarToUsdt0BaseUnits(priceHbar),
+  };
+}
+
+/**
+ * `@x402/core` 2.16 declares `PaymentOption` but exports it from no entry
+ * point, so it is derived from the route config rather than re-declared —
+ * a hand-copied shape would silently drift when the SDK adds a field.
+ */
+type PaymentOption = Extract<
+  Extract<RoutesConfig, { accepts: unknown }>["accepts"],
+  readonly unknown[]
+>[number];
+
+/**
+ * Payment options offered for a licence.
+ *
+ * Hedera is always first and is the rail that actually settles today. X Layer
+ * is appended only when it has been switched on *and* given a payee — see
+ * `xlayerRailMode` for why "advertised" and "payable" are kept apart.
+ */
+function buildAcceptedPayments(): PaymentOption[] {
+  const accepts: PaymentOption[] = [
+    {
       scheme: "exact",
       network: NETWORK,
       payTo: payToAccount,
@@ -109,6 +175,33 @@ const routes: RoutesConfig = {
       // transaction between receiving the 402 and retrying.
       maxTimeoutSeconds: 180,
     },
+  ];
+
+  if (xlayerAdvertised()) {
+    accepts.push({
+      scheme: "exact",
+      network: XLAYER_TESTNET,
+      payTo: X402_XLAYER_PAY_TO!,
+      price: licenceQuoteXLayer,
+      maxTimeoutSeconds: 180,
+      // The EIP-712 domain the buyer must sign under. `version` is spelled out
+      // because the x402 EVM scheme defaults it to "2" while this token uses
+      // "1" — a signature built on the default would be rejected on-chain.
+      extra: {
+        name: XLAYER_USDT0_EIP712_NAME,
+        version: XLAYER_USDT0_EIP712_VERSION,
+      },
+    });
+  }
+
+  return accepts;
+}
+
+const routes: RoutesConfig = {
+  [`GET ${LICENCE_GRANT_PATH}`]: {
+    description:
+      "The licence grant for an accepted negotiation: fractional rights to a track, master reference included. Priced per licence.",
+    accepts: buildAcceptedPayments(),
   },
 };
 
@@ -315,6 +408,22 @@ export function startX402Server(port: number = PORT) {
     console.log(
       `  GET ${LICENCE_GRANT_PATH} (priced per licence via quotePrice, asset ${HBAR_ASSET_ID})`,
     );
+
+    if (xlayerAdvertised()) {
+      console.log(`  X Layer rail:       ${XLAYER_TESTNET}, pay to ${X402_XLAYER_PAY_TO}`);
+      console.log(`                      facilitator: ${X402_XLAYER_FACILITATOR_URL}`);
+      console.log(`                      asset: USD₮0 ${XLAYER_USDT0_ADDRESS} @ ${HBAR_USD_RATE} USD/ℏ`);
+    } else if (xlayerRailEnabled()) {
+      // Enabled but unusable: say which half is missing rather than silently
+      // falling back to one rail.
+      const missing = [
+        X402_XLAYER_PAY_TO ? null : "X402_XLAYER_PAY_TO",
+        X402_XLAYER_FACILITATOR_URL ? null : "X402_XLAYER_FACILITATOR_URL",
+      ].filter(Boolean);
+      console.log(`  X Layer rail:       off — X402_XLAYER_RAIL=on but ${missing.join(" and ")} unset`);
+    } else {
+      console.log(`  X Layer rail:       off`);
+    }
   });
 }
 
