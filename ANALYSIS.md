@@ -1122,3 +1122,135 @@ curl -s -X POST $RPC -H 'Content-Type: application/json' \
   -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_call\",\"params\":[{\"to\":\"$T\",\"data\":\"0x3644e515\"},\"latest\"]}"
 # beklenen: 0xd2406dc8a5f31c1f65263669534de22dea0363db6ca41e1094e98442907ff982
 ```
+
+---
+
+## 12. Düzeltmeler — uygulama sırasında çürüyen iddialar
+
+> Bu bölüm §9-11'i silmiyor, üstüne yazıyor. Analizin nasıl evrildiğini görmek,
+> temiz ama yanlış bir metinden daha faydalı.
+
+### 12.1 ❌ "OKX Payments mainnet-only" — YANLIŞ
+
+**Nerede iddia ettim:** §9.2, §10.0, §10.2, §10.5 (D seçeneği "gerçek para"),
+§10.6 ("C'ye girmeden faucet'i doğrula").
+
+**Doğrusu:** OKX'in facilitator'ı **X Layer testnet'i (1952) destekliyor.**
+Resmî SDK dokümanı bunu tek satırlık bir değişiklik olarak tarif ediyor:
+
+```diff
+- const NETWORK = "eip155:196";    // X Layer Mainnet
++ const NETWORK = "eip155:1952";   // X Layer Testnet
+```
+
+Ampirik kanıt — OKX'in kendi mock merchant'ı testnet'te canlı 402 döndürüyor:
+
+```
+$ curl -i https://www.okx.com/api/v1/pay/mock-merchant/resource
+HTTP/2 402
+{"x402Version":2,"accepts":[
+  {"scheme":"exact","network":"eip155:1952","maxAmountRequired":"10000",
+   "asset":"0xcb8bf24c6ce16ad21d707c9505421a17f2bec79d",
+   "payTo":"0x3509655ad99effc7f3f74205482b1cb337ca08f7",
+   "extra":{"version":"1","name":"USDC_TEST"}},
+  {"scheme":"aggr_deferred", ...}]}
+```
+
+**Hatanın kaynağı:** yalnızca `typescript/SELLER.md`'ye baktım ve oradaki
+"X Layer (`eip155:196`) only — no other networks" ifadesini SDK kısıtı sandım.
+O ifade **"Base/Solana değil, X Layer"** demek istiyordu; mainnet/testnet ayrımı
+değil. §10.0'da Go SELLER.md'yi bulup kısmen düzeltmiştim ama sonucu tam
+çıkaramadım.
+
+**Etkisi:** §10.2'nin tamamı (kendi facilitator'ımızı yazmak, ~300 satır, 2-4 gün)
+**gereksiz**. §10.5'teki C ve D seçenekleri tek bir seçeneğe çöküyor:
+**OKX facilitator'ı + testnet, gerçek para yok.**
+
+### 12.2 ❌ "Testnet USDT0 bulunamıyor" — YANLIŞ (ve yanlış token)
+
+**Nerede:** §11.6, §10.2 madde 7 — "yol kesen risk", faucet'te USDT0 yok.
+
+**Doğrusu:** X Layer faucet'i hem test OKB (gas) hem **test stablecoin** veriyor
+(`https://www.okx.com/xlayer/faucet/xlayerfaucet`). Kullanıcı fonu aldı.
+
+**Ama operatif token beklediğim değil.** Alıcı cüzdanın bakiyesi:
+
+| Token | Adres | Bakiye |
+|---|---|---|
+| USD₮0 | `0x9e29b3aa…` | **0** |
+| **USDC_TEST** | **`0xcb8bf24c…`** | **10.000000** ✅ |
+| OKB (gas) | — | 0 (EIP-3009 alıcı için gassız, sorun değil) |
+
+Yani §11'de doğruladığım USD₮0 **OKX'in Go SDK'sının ilan ettiği varsayılan**,
+ama pratikte kullanılan token USDC_TEST — OKX'in kendi mock merchant'ının da
+kullandığı. §11'in doğrulama *yöntemi* geçerli kaldı; *nesnesi* değişti.
+
+### 12.3 ⚠️ Yeni bulgu: OKX'in mock merchant'ı yanlış EIP-712 version ilan ediyor
+
+USDC_TEST için §11'in yöntemi tekrar uygulandı:
+
+```
+name()             = "USDC_TEST"
+version()          = "2"          ← getter var, net cevap
+decimals()         = 6
+DOMAIN_SEPARATOR() = 0x7513e76c6d38c7986bcfe857d0e0772d5050d9db65ef5a941d1e15859baef959
+authorizationState(0x..01, 0x..dead) → false   (revert yok → EIP-3009 canlı ✅)
+```
+
+Domain yeniden üretimi:
+
+```
+                9d05c77b…  name="USDC_TEST" version="1"
+  *** MATCH *** 7513e76c…  name="USDC_TEST" version="2"   ← zincirdeki
+```
+
+**Ama mock merchant `extra:{"version":"1","name":"USDC_TEST"}` ilan ediyor.**
+Version "1" altında atılan imza farklı bir digest üretir ve
+`transferWithAuthorization` onu reddeder. İki olasılık: (a) mock merchant'ta
+hata var, (b) OKX facilitator'ı `extra.version`'ı yok sayıp kontratın gerçek
+DOMAIN_SEPARATOR'ını okuyor — ki bu hatayı maskeler.
+
+**Kararımız:** zincirin doğruladığı değeri (`"2"`) yayınlıyoruz, farkı kodda
+belgeliyoruz, ve `X402_XLAYER_EIP712_VERSION` ile geçersiz kılınabilir
+bırakıyoruz — OKX facilitator'ı kendi değerini dayatırsa kod değişmeden çevrilir.
+API anahtarı gelince ilk test edilecek şey bu.
+
+### 12.4 ✅ Doğru çıkan iddia: ilan ≠ ödenebilir
+
+§10.4'te "ödenemeyecek bir kalemi ilan etmek yanlış beyandır" diye bir dürüstlük
+şartı yazmıştım ve bunu bir bayrakla korumayı önermiştim. **SDK bunu zaten
+zorunlu kılıyor** — `initialize()` her `accepts[]` kalemini hem kayıtlı şemalara
+hem de facilitator'ların `/supported` çıktısına karşı doğruluyor:
+
+```
+RouteConfigurationError: Route "GET /licence/grant":
+  No scheme implementation registered for "exact" on network "eip155:1952"
+… ve şema kaydedildikten sonra:
+  Facilitator does not support scheme "exact" on network "eip155:1952"
+```
+
+Yani "quote seviyesi demo" (§10.4, A seçeneği) **var olamayacak bir şeydi**;
+3-5 saatlik ucuz kazanç tahmini geçersiz. Buna karşılık dürüstlük şartı bizim
+disiplinimize değil kütüphaneye gömülü — daha iyi yer.
+
+### 12.5 Güncel durum ve tek kalan engel
+
+Uygulanan (commit'li, `main`):
+
+| Commit | İçerik |
+|---|---|
+| `a325ad6` | `@x402/evm@2.16.0` (core ile tam uyumlu sürüm) |
+| `f07d077` | Çift raylı `accepts[]`, X Layer sabitleri, on/off bayrağı |
+| `eea945e` | OKX facilitator istemcisi, USDC_TEST'e geçiş |
+
+Doğrulanan davranışlar: ray kapalıyken 402 birebir eski (tek kalem, 41000000
+tinybar); ray açık ama OKX kimlik bilgisi yokken çökmeden tek raya düşüyor.
+
+**Tek engel: OKX API anahtarı.** `https://web3.okx.com/onchainos/dev-portal`
+üzerinden alınmalı — `OKX_API_KEY`, `OKX_SECRET_KEY`, `OKX_PASSPHRASE`. Bunlar
+olmadan rayın tam açık hali test edilemez. Bu üç değer `.env`'e girecek ve
+**TEE korumasında değiller** (§9.1) — commit edilmemeleri kritik.
+
+**Revize efor:** §10.5'teki C (2-4 gün, yüksek risk) ve D (mainnet, gerçek para)
+seçenekleri yerine tek yol kaldı: **OKX facilitator + testnet**, kalan iş
+API anahtarı + uçtan uca test, yani saatler mertebesinde.
