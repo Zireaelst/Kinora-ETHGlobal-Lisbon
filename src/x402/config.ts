@@ -50,37 +50,97 @@ export const NETWORK: Network = "hedera:testnet";
  */
 export const XLAYER_TESTNET: Network = "eip155:1952";
 
-/** USD₮0 on X Layer testnet. Proxy address — the one a signature must name. */
-export const XLAYER_USDT0_ADDRESS = "0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c";
-
-/** Confirmed on-chain via `decimals()`. */
-export const XLAYER_USDT0_DECIMALS = 6;
+/**
+ * A settlement asset on X Layer, with the EIP-712 domain a payer signs under.
+ *
+ * Every field here was read off the chain rather than taken from a document —
+ * see ANALYSIS.md §11 for the method and why it matters: both tokens are
+ * proxies, so a naive look at the token address finds no EIP-3009 selectors at
+ * all, and the domain is what decides whether a signature verifies.
+ */
+export interface XLayerAsset {
+  address: string;
+  decimals: number;
+  /** EIP-712 domain `name`, from the contract's own `name()`. */
+  eip712Name: string;
+  /** EIP-712 domain `version`. */
+  eip712Version: string;
+}
 
 /**
- * EIP-712 domain of the USD₮0 contract.
+ * USDC_TEST — the asset OKX's own testnet mock merchant charges in, and the
+ * one the demo buyer wallet actually holds. This is the default.
  *
- * `version` has no on-chain getter (`version()` reverts), so it was recovered
- * by reproducing `DOMAIN_SEPARATOR()`: of 18 candidate combinations only
- * name="USD₮0", version="1", chainId=1952, verifyingContract=<proxy> yields
- * 0xd2406dc8a5f31c1f65263669534de22dea0363db6ca41e1094e98442907ff982, which is
- * what the contract returns. Change either value and every signature this
- * server asks for would be rejected on-chain.
+ * ⚠️ **The version here is "2", and OKX's mock merchant says "1".**
+ * `GET https://www.okx.com/api/v1/pay/mock-merchant/resource` advertises
+ * `extra: {"version":"1","name":"USDC_TEST"}`, but the contract disagrees and
+ * the contract is what verifies the signature:
+ *
+ *     version()          → "2"
+ *     DOMAIN_SEPARATOR() → 0x7513e76c6d38c7986bcfe857d0e0772d5050d9db65ef5a941d1e15859baef959
+ *
+ * and that separator is reproduced by name="USDC_TEST", version="2",
+ * chainId=1952, verifyingContract=<this address> — not by version="1". A payer
+ * signing under "1" builds a different digest and `transferWithAuthorization`
+ * rejects it. We publish the value the chain agrees with; if OKX's facilitator
+ * turns out to insist on its own, override it (see `xlayerAsset`) rather than
+ * editing this constant, so the verified value stays on record.
  */
-export const XLAYER_USDT0_EIP712_NAME = "USD₮0";
-export const XLAYER_USDT0_EIP712_VERSION = "1";
+export const XLAYER_USDC_TEST: XLayerAsset = {
+  address: "0xcb8bf24c6ce16ad21d707c9505421a17f2bec79d",
+  decimals: 6,
+  eip712Name: "USDC_TEST",
+  eip712Version: "2",
+};
+
+/**
+ * USD₮0 — the default asset OKX's Go SDK declares for `eip155:1952`.
+ *
+ * Kept because it is the documented default and fully verified (EIP-3009 in
+ * both the v,r,s and bytes variants, domain name "USD₮0" version "1"
+ * reproducing 0xd2406dc8…907ff982), but it is *not* what the demo wallet holds
+ * and not what OKX's own merchant uses, so it is not the default here.
+ */
+export const XLAYER_USDT0: XLayerAsset = {
+  address: "0x9e29b3aada05bf2d2c827af80bd28dc0b9b4fb0c",
+  decimals: 6,
+  eip712Name: "USD₮0",
+  eip712Version: "1",
+};
+
+/**
+ * The asset this server quotes on X Layer.
+ *
+ * `X402_XLAYER_ASSET=usdt0` switches to USD₮0; `X402_XLAYER_EIP712_VERSION`
+ * overrides just the domain version, which exists solely so a disagreement
+ * with OKX's facilitator can be settled by configuration instead of a patch.
+ */
+export function xlayerAsset(): XLayerAsset {
+  const base =
+    (process.env.X402_XLAYER_ASSET ?? "").trim().toLowerCase() === "usdt0"
+      ? XLAYER_USDT0
+      : XLAYER_USDC_TEST;
+
+  const versionOverride = process.env.X402_XLAYER_EIP712_VERSION?.trim();
+  return versionOverride ? { ...base, eip712Version: versionOverride } : base;
+}
 
 /** Where X Layer payments land. An EVM address, unlike the Hedera payee. */
 export const X402_XLAYER_PAY_TO = process.env.X402_XLAYER_PAY_TO;
 
 /**
- * Facilitator that verifies and settles X Layer payments.
+ * Whether OKX facilitator credentials are configured.
  *
- * Separate from `X402_FACILITATOR_URL` because no single facilitator covers
- * both rails: blocky402 settles Hedera and knows nothing of `eip155:1952`, and
- * OKX's own facilitator is X Layer mainnet under an authenticated SA API. The
- * resource server takes an array of facilitators for exactly this reason.
+ * X Layer is settled by OKX's facilitator, which is authenticated (HMAC over
+ * an API key/secret/passphrase from the OKX developer portal) rather than an
+ * open URL like blocky402. No single facilitator covers both rails, which is
+ * why the resource server takes an array of them.
  */
-export const X402_XLAYER_FACILITATOR_URL = process.env.X402_XLAYER_FACILITATOR_URL;
+export function okxCredentialsPresent(): boolean {
+  return Boolean(
+    process.env.OKX_API_KEY && process.env.OKX_SECRET_KEY && process.env.OKX_PASSPHRASE,
+  );
+}
 
 /**
  * Whether the X Layer rail is switched on. Off unless explicitly enabled.
@@ -108,16 +168,13 @@ export function xlayerRailEnabled(): boolean {
 /**
  * True when the rail is enabled *and* fully configured.
  *
- * Both a payee and a facilitator are required: without the first there is
- * nowhere to send the money, without the second the server would refuse to
- * boot at all, which is a worse failure than quietly staying on one rail.
+ * Both a payee and facilitator credentials are required: without the first
+ * there is nowhere to send the money, without the second the server would
+ * refuse to boot at all, which is a worse failure than quietly staying on one
+ * rail.
  */
 export function xlayerAdvertised(): boolean {
-  return (
-    xlayerRailEnabled() &&
-    Boolean(X402_XLAYER_PAY_TO) &&
-    Boolean(X402_XLAYER_FACILITATOR_URL)
-  );
+  return xlayerRailEnabled() && Boolean(X402_XLAYER_PAY_TO) && okxCredentialsPresent();
 }
 
 /**
@@ -132,13 +189,13 @@ export function xlayerAdvertised(): boolean {
 export const HBAR_USD_RATE = Number(process.env.HBAR_USD_RATE ?? "0.28");
 
 /**
- * Converts a licence's HBAR quote into USD₮0 base units.
+ * Converts a licence's HBAR quote into base units of the X Layer asset.
  *
  * Floors at one base unit: a licence cheap enough to round to zero would
  * otherwise be advertised as free, and a zero-amount payment requirement is
  * not something a buyer agent can meaningfully sign.
  */
-export function hbarToUsdt0BaseUnits(hbar: number): string {
-  const units = Math.round(hbar * HBAR_USD_RATE * 10 ** XLAYER_USDT0_DECIMALS);
+export function hbarToXLayerBaseUnits(hbar: number, asset: XLayerAsset = xlayerAsset()): string {
+  const units = Math.round(hbar * HBAR_USD_RATE * 10 ** asset.decimals);
   return String(Math.max(1, units));
 }

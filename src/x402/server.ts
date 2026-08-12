@@ -5,26 +5,25 @@ import { paymentMiddleware } from "@x402/express";
 import { decodePaymentResponseHeader } from "@x402/core/http";
 import { recordCompletedSale } from "../a2a/seller-executor.js";
 import { HTTPFacilitatorClient, x402ResourceServer } from "@x402/core/server";
-import type { HTTPRequestContext, RoutesConfig } from "@x402/core/server";
+import type { FacilitatorClient, HTTPRequestContext, RoutesConfig } from "@x402/core/server";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { ExactHederaScheme } from "@x402/hedera/exact/server";
 import {
   HBAR_ASSET_ID,
   hbarToTinybar,
   HBAR_USD_RATE,
-  hbarToUsdt0BaseUnits,
+  hbarToXLayerBaseUnits,
   LICENCE_GRANT_PATH,
   NETWORK,
   X402_PORT,
-  X402_XLAYER_FACILITATOR_URL,
+  okxCredentialsPresent,
   X402_XLAYER_PAY_TO,
   xlayerAdvertised,
+  xlayerAsset,
   xlayerRailEnabled,
   XLAYER_TESTNET,
-  XLAYER_USDT0_ADDRESS,
-  XLAYER_USDT0_EIP712_NAME,
-  XLAYER_USDT0_EIP712_VERSION,
 } from "./config.js";
+import { createOkxFacilitatorFromEnv } from "./okx-facilitator.js";
 import {
   buildLicenceGrant,
   LicenceNotGrantableError,
@@ -77,14 +76,16 @@ const payToAccount = requireEnv("X402_PAY_TO_ACCOUNT");
  * for every Hedera network, so mainnet would need no code change.
  */
 /**
- * One facilitator per rail. blocky402 settles Hedera; the X Layer facilitator
- * is only added when that rail is configured, because the server validates
- * routes against what its facilitators advertise and would refuse to boot if a
- * quoted network had nobody behind it.
+ * One facilitator per rail. blocky402 settles Hedera; OKX settles X Layer, and
+ * is only added when that rail is configured — the server validates routes
+ * against what its facilitators advertise and would refuse to boot if a quoted
+ * network had nobody behind it.
  */
-const facilitators = [new HTTPFacilitatorClient({ url: facilitatorUrl })];
-if (xlayerAdvertised()) {
-  facilitators.push(new HTTPFacilitatorClient({ url: X402_XLAYER_FACILITATOR_URL! }));
+const okxFacilitator = createOkxFacilitatorFromEnv();
+
+const facilitators: FacilitatorClient[] = [new HTTPFacilitatorClient({ url: facilitatorUrl })];
+if (xlayerAdvertised() && okxFacilitator) {
+  facilitators.push(okxFacilitator);
 }
 
 const x402Server = new x402ResourceServer(facilitators).register(
@@ -141,9 +142,10 @@ async function licenceQuoteXLayer(context: HTTPRequestContext) {
     throw new Error("licenceQuoteXLayer reached without a licence — guard ordering broken");
   }
   const priceHbar = await quotePrice(licence.track_id, licence.shares);
+  const asset = xlayerAsset();
   return {
-    asset: XLAYER_USDT0_ADDRESS,
-    amount: hbarToUsdt0BaseUnits(priceHbar),
+    asset: asset.address,
+    amount: hbarToXLayerBaseUnits(priceHbar, asset),
   };
 }
 
@@ -178,19 +180,19 @@ function buildAcceptedPayments(): PaymentOption[] {
   ];
 
   if (xlayerAdvertised()) {
+    const asset = xlayerAsset();
     accepts.push({
       scheme: "exact",
       network: XLAYER_TESTNET,
       payTo: X402_XLAYER_PAY_TO!,
       price: licenceQuoteXLayer,
       maxTimeoutSeconds: 180,
-      // The EIP-712 domain the buyer must sign under. `version` is spelled out
-      // because the x402 EVM scheme defaults it to "2" while this token uses
-      // "1" — a signature built on the default would be rejected on-chain.
-      extra: {
-        name: XLAYER_USDT0_EIP712_NAME,
-        version: XLAYER_USDT0_EIP712_VERSION,
-      },
+      // The EIP-712 domain the buyer signs under. Both fields are stated
+      // rather than left to the scheme's defaults: they decide whether the
+      // signature verifies at all, and the values here were read off the
+      // contract (see config.ts — OKX's own mock merchant publishes a
+      // different `version` than the token reports).
+      extra: { name: asset.eip712Name, version: asset.eip712Version },
     });
   }
 
@@ -410,15 +412,18 @@ export function startX402Server(port: number = PORT) {
     );
 
     if (xlayerAdvertised()) {
+      const asset = xlayerAsset();
       console.log(`  X Layer rail:       ${XLAYER_TESTNET}, pay to ${X402_XLAYER_PAY_TO}`);
-      console.log(`                      facilitator: ${X402_XLAYER_FACILITATOR_URL}`);
-      console.log(`                      asset: USD₮0 ${XLAYER_USDT0_ADDRESS} @ ${HBAR_USD_RATE} USD/ℏ`);
+      console.log(`                      facilitator: OKX (${asset.eip712Name} ${asset.address})`);
+      console.log(
+        `                      EIP-712 domain version "${asset.eip712Version}" @ ${HBAR_USD_RATE} USD/ℏ`,
+      );
     } else if (xlayerRailEnabled()) {
       // Enabled but unusable: say which half is missing rather than silently
       // falling back to one rail.
       const missing = [
         X402_XLAYER_PAY_TO ? null : "X402_XLAYER_PAY_TO",
-        X402_XLAYER_FACILITATOR_URL ? null : "X402_XLAYER_FACILITATOR_URL",
+        okxCredentialsPresent() ? null : "OKX_API_KEY/OKX_SECRET_KEY/OKX_PASSPHRASE",
       ].filter(Boolean);
       console.log(`  X Layer rail:       off — X402_XLAYER_RAIL=on but ${missing.join(" and ")} unset`);
     } else {
