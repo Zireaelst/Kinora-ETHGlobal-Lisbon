@@ -1,5 +1,10 @@
 node_modules/
+# `.env` alone would not cover .env.local, .env.backup-1786614683, or an
+# editor's .env.save — all carrying the same secrets, none of them looking
+# alarming in `git status`. Ignore the whole family, then re-admit the example.
 .env
+.env.*
+!.env.example
 dist/
 *.log
 .DS_Store
