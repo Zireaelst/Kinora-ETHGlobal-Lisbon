@@ -174,9 +174,14 @@ export class OkxFacilitatorClient implements FacilitatorClient {
  * only", which is a supported configuration, not an error.
  */
 export function createOkxFacilitatorFromEnv(): OkxFacilitatorClient | undefined {
-  const apiKey = process.env.OKX_API_KEY;
-  const secretKey = process.env.OKX_SECRET_KEY;
-  const passphrase = process.env.OKX_PASSPHRASE;
+  // Trimmed because a stray space or newline around a credential produces a
+  // 401 that reads like a wrong key rather than a formatting slip, and the
+  // difference costs an hour to find. Note the related `.env` trap this cannot
+  // fix: dotenv treats `#` in an unquoted value as a comment, so a passphrase
+  // containing one must be quoted or it arrives silently truncated.
+  const apiKey = process.env.OKX_API_KEY?.trim();
+  const secretKey = process.env.OKX_SECRET_KEY?.trim();
+  const passphrase = process.env.OKX_PASSPHRASE?.trim();
 
   if (!apiKey || !secretKey || !passphrase) return undefined;
 

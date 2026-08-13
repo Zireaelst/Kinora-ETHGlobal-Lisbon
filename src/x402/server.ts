@@ -1,6 +1,11 @@
 import "dotenv/config";
 import { fileURLToPath } from "node:url";
-import express, { type NextFunction, type Request, type Response } from "express";
+import express, {
+  type NextFunction,
+  type Request,
+  type RequestHandler,
+  type Response,
+} from "express";
 import { paymentMiddleware } from "@x402/express";
 import { decodePaymentResponseHeader } from "@x402/core/http";
 import { recordCompletedSale } from "../a2a/seller-executor.js";
@@ -179,7 +184,7 @@ function buildAcceptedPayments(): PaymentOption[] {
     },
   ];
 
-  if (xlayerAdvertised()) {
+  if (xlayerLive) {
     const asset = xlayerAsset();
     accepts.push({
       scheme: "exact",
@@ -199,13 +204,23 @@ function buildAcceptedPayments(): PaymentOption[] {
   return accepts;
 }
 
-const routes: RoutesConfig = {
-  [`GET ${LICENCE_GRANT_PATH}`]: {
-    description:
-      "The licence grant for an accepted negotiation: fractional rights to a track, master reference included. Priced per licence.",
-    accepts: buildAcceptedPayments(),
-  },
-};
+/**
+ * Whether the X Layer rail survived its pre-flight. See {@link initialisePayments}.
+ *
+ * Starts as "configured?" and can only ever be turned off — a rail is dropped
+ * when its facilitator will not vouch for it, never added behind one's back.
+ */
+let xlayerLive = xlayerAdvertised();
+
+function buildRoutes(): RoutesConfig {
+  return {
+    [`GET ${LICENCE_GRANT_PATH}`]: {
+      description:
+        "The licence grant for an accepted negotiation: fractional rights to a track, master reference included. Priced per licence.",
+      accepts: buildAcceptedPayments(),
+    },
+  };
+}
 
 export const app = express();
 
@@ -324,8 +339,70 @@ function requireAcceptedLicence(req: Request, res: Response, next: NextFunction)
 // to must not even be quoted a price, let alone be able to pay it.
 app.get(LICENCE_GRANT_PATH, requireAcceptedLicence);
 
-// Only paths present in `routes` are charged; everything else passes through.
-app.use(paymentMiddleware(routes, x402Server));
+/**
+ * Confirms every configured rail before any of them is offered.
+ *
+ * The resource server validates routes at startup and refuses to serve one
+ * whose `accepts[]` names a network its facilitators do not vouch for. Left
+ * alone that is an all-or-nothing failure: a mistyped OKX passphrase produced
+ * HTTP 500 on the licence endpoint, taking the working Hedera rail down with
+ * it — the optional rail breaking the required one.
+ *
+ * So the X Layer facilitator is asked up front, and a rail that cannot answer
+ * is dropped with a warning rather than allowed to fail the route. Hedera is
+ * deliberately *not* probed this way: it is the rail this server exists to
+ * serve, and silently continuing without it would hide a real outage.
+ *
+ * Idempotent, and safe to call concurrently — the promise is cached.
+ */
+let paymentsReady: Promise<void> | undefined;
+let chargeRequest: RequestHandler | undefined;
+
+export function initialisePayments(): Promise<void> {
+  paymentsReady ??= (async () => {
+    if (xlayerLive && okxFacilitator) {
+      try {
+        const supported = await okxFacilitator.getSupported();
+        const covered = (supported?.kinds ?? []).some(
+          (kind) => kind.scheme === "exact" && kind.network === XLAYER_TESTNET,
+        );
+        if (!covered) {
+          xlayerLive = false;
+          console.warn(
+            `[x402] OKX facilitator does not list exact/${XLAYER_TESTNET} — X Layer rail disabled, Hedera unaffected.`,
+          );
+        }
+      } catch (error) {
+        xlayerLive = false;
+        console.warn(
+          `[x402] X Layer rail disabled — OKX facilitator pre-flight failed: ${String(error).slice(0, 200)}`,
+        );
+        console.warn(`[x402] Hedera settlement is unaffected; the licence endpoint stays up.`);
+      }
+    }
+
+    chargeRequest = paymentMiddleware(buildRoutes(), x402Server);
+  })();
+
+  return paymentsReady;
+}
+
+/**
+ * Holds the payment middleware's position in the stack while its construction
+ * waits on the pre-flight above.
+ *
+ * Registered synchronously and deliberately: `app.use` appends, so deferring
+ * the real registration into a promise would place it *after* the grant
+ * handler below — and a paid endpoint whose paywall lands after its handler is
+ * simply a free endpoint. Order is preserved here; only the decision about
+ * which rails to charge on is deferred.
+ */
+app.use((req, res, next) => {
+  initialisePayments().then(
+    () => chargeRequest!(req, res, next),
+    (error) => next(error),
+  );
+});
 
 /**
  * Runs the seller's post-payment chain once the response is on its way out.
@@ -402,7 +479,7 @@ app.get(LICENCE_GRANT_PATH, async (req, res) => {
 });
 
 export function startX402Server(port: number = PORT) {
-  return app.listen(port, () => {
+  const server = app.listen(port, () => {
     console.log(`x402 licence server listening on http://localhost:${port}`);
     console.log(`  facilitator: ${facilitatorUrl}`);
     console.log(`  pay to:      ${payToAccount} (${NETWORK})`);
@@ -410,8 +487,14 @@ export function startX402Server(port: number = PORT) {
     console.log(
       `  GET ${LICENCE_GRANT_PATH} (priced per licence via quotePrice, asset ${HBAR_ASSET_ID})`,
     );
+  });
 
-    if (xlayerAdvertised()) {
+  // Settle the rails before the first request rather than on it, so the banner
+  // reports what will actually be charged instead of what was merely
+  // configured. Not awaited — the listener is already up, and any request that
+  // arrives first waits on this same promise.
+  void initialisePayments().then(() => {
+    if (xlayerLive) {
       const asset = xlayerAsset();
       console.log(`  X Layer rail:       ${XLAYER_TESTNET}, pay to ${X402_XLAYER_PAY_TO}`);
       console.log(`                      facilitator: OKX (${asset.eip712Name} ${asset.address})`);
@@ -419,17 +502,23 @@ export function startX402Server(port: number = PORT) {
         `                      EIP-712 domain version "${asset.eip712Version}" @ ${HBAR_USD_RATE} USD/ℏ`,
       );
     } else if (xlayerRailEnabled()) {
-      // Enabled but unusable: say which half is missing rather than silently
-      // falling back to one rail.
+      // Enabled but not serving. Either half the configuration is absent, or
+      // the pre-flight rejected it — and that case has already logged why.
       const missing = [
         X402_XLAYER_PAY_TO ? null : "X402_XLAYER_PAY_TO",
         okxCredentialsPresent() ? null : "OKX_API_KEY/OKX_SECRET_KEY/OKX_PASSPHRASE",
       ].filter(Boolean);
-      console.log(`  X Layer rail:       off — X402_XLAYER_RAIL=on but ${missing.join(" and ")} unset`);
+      console.log(
+        missing.length > 0
+          ? `  X Layer rail:       off — X402_XLAYER_RAIL=on but ${missing.join(" and ")} unset`
+          : `  X Layer rail:       off — see the pre-flight warning above`,
+      );
     } else {
       console.log(`  X Layer rail:       off`);
     }
   });
+
+  return server;
 }
 
 // Only start listening when run directly, so a test can own the lifecycle.
