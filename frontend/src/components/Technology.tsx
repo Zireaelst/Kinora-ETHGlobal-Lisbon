@@ -55,7 +55,7 @@ export default function Technology() {
               0 smart contracts
             </p>
             <p className="font-mono mt-1 text-[11px] text-accent-teal/70">
-              no Solidity, no contract calls
+              none written, none deployed, none called
             </p>
           </div>
         </div>
@@ -71,9 +71,16 @@ export default function Technology() {
           </pre>
         </div>
         <p className="mt-4 max-w-2xl text-sm leading-relaxed text-white/60">
-          The project started on ERC-8004 Solidity registries and the entire EVM layer was
-          deleted, not bypassed. <code className="rounded bg-white/10 px-1.5 py-0.5 font-mono text-[12px]">ethers</code>{' '}
-          survives only inside the Hedera SDK&rsquo;s own dependency tree — nothing here imports it.
+          The project started on ERC-8004 Solidity registries and that layer was deleted, not
+          bypassed — identity, the audit trail and the certificate all moved onto Hedera&rsquo;s own
+          services. <code className="rounded bg-white/10 px-1.5 py-0.5 font-mono text-[12px]">ethers</code>{' '}
+          survives only inside the Hedera SDK&rsquo;s dependency tree; nothing here imports it.
+        </p>
+        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-white/60">
+          A licence can also be paid for in a stablecoin on X Layer, so a buyer agent holding no
+          HBAR is not shut out. That rail settles the way the rest of this project works: the buyer
+          signs an EIP-712 authorisation and a facilitator submits it. Kinora writes no contract,
+          deploys none, and calls none on either chain — which is why the check above still exits 1.
         </p>
       </div>
     </section>

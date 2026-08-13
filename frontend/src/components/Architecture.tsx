@@ -5,7 +5,21 @@ const STACK_GROUPS = [
   { label: 'Agent protocol', chips: ['@a2a-js/sdk', 'AgentCard 1.0 + 0.3', 'JSON-RPC'] },
   {
     label: 'Payments',
-    chips: ['@x402/express', '@x402/hedera', 'facilitator: blocky402', 'asset: HBAR (0.0.0)'],
+    chips: [
+      '@x402/express',
+      '@x402/hedera',
+      'facilitator: blocky402',
+      'asset: HBAR (0.0.0)',
+    ],
+  },
+  {
+    label: 'Payments — second rail',
+    chips: [
+      '@x402/evm',
+      'X Layer testnet (eip155:1952)',
+      'facilitator: OKX',
+      'asset: USDC_TEST (EIP-3009)',
+    ],
   },
   {
     label: 'Identity',
@@ -136,8 +150,10 @@ export default function Architecture() {
             Tech stack
           </h3>
           <p className="mb-8 text-sm text-white/65">
-            Pure Hedera. Kinora pivoted away from an earlier ERC-8004 / EVM design — ethers now
-            shows up only as a transitive dependency of the Hedera SDK.
+            Everything that has to be provable stays on Hedera: identity, the audit trail, and the
+            certificate with its royalty. Only the money can take a second route — a licence settles
+            in HBAR, or in a stablecoin on X Layer for a buyer holding no HBAR. Neither route writes
+            or deploys a contract.
           </p>
           <div className="flex flex-col">
             {STACK_GROUPS.map((group, i) => (

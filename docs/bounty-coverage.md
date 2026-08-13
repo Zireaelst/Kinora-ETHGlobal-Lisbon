@@ -13,7 +13,7 @@ What is genuinely wired up, what stands in for something else, and what is simpl
 | Requirement | Status | Where | Proof |
 |---|---|---|---|
 | No Solidity anywhere | ✅ | — | `grep -rniE "solidity\|\bethers\b\|Contract(Execute\|Call\|Create)Transaction\|ContractCallQuery\|ContractFunctionParameters\|\.sol\b" src scripts --include=*.ts --include=*.html` → **exits 1**, 41 files scanned |
-| No EVM contract calls | ✅ | — | Same grep. The project *started* on ERC-8004 Solidity registries; the whole EVM layer was deleted — `git log --oneline --grep "remove the ERC-8004"` |
+| No EVM contract calls | ✅ | — | Same grep. The project *started* on ERC-8004 Solidity registries; that layer was deleted — `git log --oneline --grep "remove the ERC-8004"`. **A second payment rail on X Layer was added afterwards and does not change this row:** the buyer signs an EIP-712 authorisation and OKX's facilitator submits the ERC-20 transfer. Kinora writes no contract, deploys none, and issues no contract call on either chain |
 | `ethers` not a dependency of ours | ✅ | `package.json` | `node -e "console.log(Object.keys(require('./package.json').dependencies))"` — absent. It remains transitively inside the Hedera SDK's own tree; that is theirs, not ours |
 | Hedera SDK | ✅ | `src/hedera/clients.ts` | `@hiero-ledger/sdk` — the same SDK as `@hashgraph/sdk` after Hedera donated it to the Linux Foundation's Hiero project |
 | **Two or more native Hedera services** | ✅ **three** | below | HCS + HTS + Mirror Node |
@@ -37,6 +37,7 @@ What is genuinely wired up, what stands in for something else, and what is simpl
 | Autonomous buyer strategy | ⚠️ rule-based | `negotiateWithStrategy` in `buyer-client.ts` | Three rules, **no model call in the loop**: counter only on a price refusal, counter at the seller's disclosed floor, budget is a hard wall. Sold as light strategy, not AI bargaining — `npm run test:rounds` walks away from a forbidden use at 10× the budget |
 | x402 payments | ✅ | `src/x402/server.ts`, `pay.ts` | 402 → sign → 200 against the blocky402 testnet facilitator |
 | Real HBAR settlement | ✅ | asset `0.0.0` | Every accepted run produces a HashScan transaction |
+| **Second settlement rail (X Layer)** | ✅ **settled live** | `src/x402/config.ts`, `okx-facilitator.ts` | The same licence is quoted on `hedera:testnet` **and** `eip155:1952`, so a buyer holding no HBAR is not shut out. Identity, audit trail and certificate stay on Hedera — only the money moves elsewhere. Proven end to end: OKX's Agentic Wallet paid licence #3 with `onchainos payment pay`, tx [`0xe3a1407e…4ca6d13a`](https://www.oklink.com/xlayer-test/tx/0xe3a1407e897b651d3fd874d7e5efa615b31e63d9fa17f721b9da0ee44ca6d13a) — 0.1148 USDC_TEST moved buyer→seller and the decrypted master reference came back in the 200. Off by default (`X402_XLAYER_RAIL`) |
 | **No human approves any payment** | ✅ | `negotiateAndPurchase` | The buyer reads price and endpoint off the acceptance metadata and signs unattended — `npm run test:e2e` |
 | Per-licence pricing | ✅ | `licenceQuote` in `x402/server.ts` | The 402 quotes `quotePrice(track, shares)` from the licence row, not a flat route price |
 | Payment bound to the negotiation | ✅ | `requireAcceptedLicence` | An unnegotiated or altered request is refused **403 before any price is quoted**; a settled acceptance cannot be replayed |
