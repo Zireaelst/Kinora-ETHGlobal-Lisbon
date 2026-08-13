@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { requireAuditTopicId } from "./audit.js";
+import { envOr } from "../env.js";
 
 /**
  * Reading the audit topic back off the mirror node.
@@ -16,7 +17,7 @@ import { requireAuditTopicId } from "./audit.js";
  */
 
 export const MIRROR_NODE =
-  process.env.HEDERA_MIRROR_NODE_URL ?? "https://testnet.mirrornode.hedera.com";
+  envOr("HEDERA_MIRROR_NODE_URL", "https://testnet.mirrornode.hedera.com");
 
 export interface TopicMessage {
   sequenceNumber: number;

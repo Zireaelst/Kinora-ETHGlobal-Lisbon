@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { existsSync, readFileSync } from "node:fs";
+import { envString } from "../env.js";
 
 /**
  * Reads the agent UAIDs written by `scripts/register-agents-hcs.ts`.
@@ -39,11 +40,11 @@ function loadAgentUaids(): AgentUaidsFile {
 
 /** Env override exists so a test can act as an agent that is not in the file. */
 export function getBuyerUaid(): string {
-  return process.env.BUYER_UAID ?? loadAgentUaids().buyer.uaid;
+  return envString("BUYER_UAID") ?? loadAgentUaids().buyer.uaid;
 }
 
 export function getSellerUaid(): string {
-  return process.env.SELLER_UAID ?? loadAgentUaids().seller.uaid;
+  return envString("SELLER_UAID") ?? loadAgentUaids().seller.uaid;
 }
 
 /**

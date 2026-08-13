@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import express from "express";
 import { createApiRouter } from "./api.js";
+import { envNumber } from "../env.js";
 
 /**
  * The demo panel.
@@ -15,7 +16,7 @@ import { createApiRouter } from "./api.js";
  *   npx tsx src/web/server.ts   →  http://localhost:4100
  */
 
-export const WEB_PORT = Number(process.env.WEB_PORT ?? 4100);
+export const WEB_PORT = envNumber("WEB_PORT", 4100);
 
 const here = dirname(fileURLToPath(import.meta.url));
 

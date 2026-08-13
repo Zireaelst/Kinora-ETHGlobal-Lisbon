@@ -30,6 +30,7 @@ import {
   NETWORK,
   X402_BASE_URL,
 } from "../x402/config.js";
+import { envString } from "../env.js";
 
 /**
  * The seller agent's negotiation logic.
@@ -112,7 +113,7 @@ export interface NegotiationResult {
  * it at or below the cheapest track whenever the catalogue is reseeded.
  */
 export const DEFAULT_POLICY_STATEMENT =
-  process.env.POLICY_STATEMENT ??
+  envString("POLICY_STATEMENT") ??
   "You can grant sync and sampling licences on my tracks to verified buyers, at least " +
     "0.0008 HBAR per share, up to 5000 shares per licence. Never license my music for " +
     "political advertising.";

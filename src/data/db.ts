@@ -7,6 +7,7 @@ import {
 } from "node:crypto";
 import Database from "better-sqlite3";
 import type { BasisPoints } from "../types/marketplace.js";
+import { envOr } from "../env.js";
 
 /**
  * The rights holder's catalogue.
@@ -131,7 +132,7 @@ export function decryptField(payload: string, keyRef: string = DEFAULT_KEY_REF):
   ]).toString("utf8");
 }
 
-export const DEFAULT_DB_PATH = process.env.DATA_DB_PATH ?? "catalogue.db";
+export const DEFAULT_DB_PATH = envOr("DATA_DB_PATH", "catalogue.db");
 
 /**
  * Opens the database and creates the schema if it is not there yet.

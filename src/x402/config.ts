@@ -1,5 +1,6 @@
 import { Hbar } from "@hiero-ledger/sdk";
 import type { Network } from "@x402/core/types";
+import { envNumber, envOr, envString } from "../env.js";
 
 /**
  * Shared facts about the paid licence endpoint.
@@ -15,8 +16,7 @@ import type { Network } from "@x402/core/types";
 
 export const X402_PORT = 4021;
 
-export const X402_BASE_URL =
-  process.env.X402_BASE_URL ?? `http://localhost:${X402_PORT}`;
+export const X402_BASE_URL = envOr("X402_BASE_URL", `http://localhost:${X402_PORT}`);
 
 export const LICENCE_GRANT_PATH = "/licence/grant";
 
@@ -117,16 +117,16 @@ export const XLAYER_USDT0: XLayerAsset = {
  */
 export function xlayerAsset(): XLayerAsset {
   const base =
-    (process.env.X402_XLAYER_ASSET ?? "").trim().toLowerCase() === "usdt0"
+    (envString("X402_XLAYER_ASSET") ?? "").toLowerCase() === "usdt0"
       ? XLAYER_USDT0
       : XLAYER_USDC_TEST;
 
-  const versionOverride = process.env.X402_XLAYER_EIP712_VERSION?.trim();
+  const versionOverride = envString("X402_XLAYER_EIP712_VERSION");
   return versionOverride ? { ...base, eip712Version: versionOverride } : base;
 }
 
 /** Where X Layer payments land. An EVM address, unlike the Hedera payee. */
-export const X402_XLAYER_PAY_TO = process.env.X402_XLAYER_PAY_TO;
+export const X402_XLAYER_PAY_TO = envString("X402_XLAYER_PAY_TO");
 
 /**
  * Whether OKX facilitator credentials are configured.
@@ -138,7 +138,7 @@ export const X402_XLAYER_PAY_TO = process.env.X402_XLAYER_PAY_TO;
  */
 export function okxCredentialsPresent(): boolean {
   return Boolean(
-    process.env.OKX_API_KEY && process.env.OKX_SECRET_KEY && process.env.OKX_PASSPHRASE,
+    envString("OKX_API_KEY") && envString("OKX_SECRET_KEY") && envString("OKX_PASSPHRASE"),
   );
 }
 
@@ -161,7 +161,7 @@ export function okxCredentialsPresent(): boolean {
  * on/off, where "on" means a facilitator genuinely stands behind it.
  */
 export function xlayerRailEnabled(): boolean {
-  const raw = (process.env.X402_XLAYER_RAIL ?? "off").trim().toLowerCase();
+  const raw = (envString("X402_XLAYER_RAIL") ?? "off").toLowerCase();
   return raw === "on" || raw === "true" || raw === "1";
 }
 
@@ -186,7 +186,7 @@ export function xlayerAdvertised(): boolean {
  * the seam where a live feed (OKX market data) would attach. A demo must not
  * silently invent an exchange rate it presents as a market price.
  */
-export const HBAR_USD_RATE = Number(process.env.HBAR_USD_RATE ?? "0.28");
+export const HBAR_USD_RATE = envNumber("HBAR_USD_RATE", 0.28);
 
 /**
  * Converts a licence's HBAR quote into base units of the X Layer asset.
