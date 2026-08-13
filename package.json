@@ -14,7 +14,8 @@
     "verify:royalty": "tsx scripts/verify-royalty.ts",
     "web": "tsx src/web/server.ts",
     "dev": "tsx src/dev-server.ts",
-    "check:okx": "tsx scripts/check-okx.ts"
+    "check:okx": "tsx scripts/check-okx.ts",
+    "demo:xlayer": "tsx scripts/xlayer-demo.ts"
   },
   "repository": {
     "type": "git",
