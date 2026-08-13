@@ -13,7 +13,8 @@
     "test:rounds": "tsx scripts/test-multiround.ts",
     "verify:royalty": "tsx scripts/verify-royalty.ts",
     "web": "tsx src/web/server.ts",
-    "dev": "tsx src/dev-server.ts"
+    "dev": "tsx src/dev-server.ts",
+    "check:okx": "tsx scripts/check-okx.ts"
   },
   "repository": {
     "type": "git",
