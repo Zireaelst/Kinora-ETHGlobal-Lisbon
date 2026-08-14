@@ -1,6 +1,7 @@
 import "dotenv/config";
 import {
   CustomRoyaltyFee,
+  Hbar,
   TokenAssociateTransaction,
   TokenCreateTransaction,
   TokenType,
@@ -75,6 +76,11 @@ async function main(): Promise<void> {
       .setTreasuryAccountId(seller.operatorAccountId!)
       .setSupplyKey(seller.operatorPublicKey!)
       .setCustomFees([royalty])
+      // Creating a collection costs far more than an ordinary transaction and
+      // the client's default cap does not cover it — without this the receipt
+      // comes back INSUFFICIENT_TX_FEE. A ceiling, not a price: Hedera charges
+      // the actual fee (a few ℏ) and only refuses to exceed this.
+      .setMaxTransactionFee(new Hbar(50))
       .execute(seller);
 
     const createReceipt = await createResponse.getReceipt(seller);
