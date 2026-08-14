@@ -16,7 +16,8 @@
     "dev": "tsx src/dev-server.ts",
     "check:okx": "tsx scripts/check-okx.ts",
     "demo:xlayer": "tsx scripts/xlayer-demo.ts",
-    "check:env": "tsx scripts/check-env.ts"
+    "check:env": "tsx scripts/check-env.ts",
+    "start": "tsx src/prod-server.ts"
   },
   "repository": {
     "type": "git",
