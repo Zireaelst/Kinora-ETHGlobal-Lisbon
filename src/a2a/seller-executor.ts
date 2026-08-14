@@ -17,6 +17,7 @@ import {
 } from "../data/db.js";
 import { VALIDATION_TAG } from "../identity/attestation.js";
 import { SCORE_SUCCESS, submitFeedback } from "../identity/reputation.js";
+import { accountIdFromUaid } from "../identity/uaid.js";
 import { verifyBuyerIdentity } from "../identity/verify.js";
 import { logAuditEvent } from "../hedera/audit.js";
 import { createSellerClient } from "../hedera/clients.js";
@@ -238,6 +239,37 @@ export interface CompletedSale {
  * idempotent: feedback appends a new entry every time it is submitted, so a
  * sale recorded twice would rate the buyer twice for one payment.
  */
+/** A Hedera account id, as opposed to an EVM address or anything else. */
+const HEDERA_ACCOUNT_ID = /^\d+\.\d+\.\d+$/;
+
+/**
+ * Decides which account receives the licence certificate.
+ *
+ * Normally the payer: whoever settled is who gets the proof. That breaks once
+ * a licence can be paid for on another chain — an X Layer settlement reports
+ * an EVM address as its payer, and handing that to a Hedera transfer does not
+ * fail. It silently auto-creates a *new* Hedera account aliased to that
+ * address and delivers the certificate there, leaving it stranded away from
+ * the agent that negotiated for it and unassociated with anything.
+ *
+ * So a payer is used only when it is genuinely a Hedera account. Otherwise the
+ * certificate goes to the account named by the buyer's UAID — the identity
+ * that was verified at gate 1 and that the whole licence is recorded against,
+ * which is the more honest answer even on the Hedera rail.
+ */
+export function certificateAccountFor(
+  payerAccountId: string | undefined,
+  buyerUaid: string,
+): string | undefined {
+  if (payerAccountId && HEDERA_ACCOUNT_ID.test(payerAccountId)) return payerAccountId;
+
+  try {
+    return accountIdFromUaid(buyerUaid);
+  } catch {
+    return undefined;
+  }
+}
+
 export async function recordCompletedSale(
   licenceId: number,
   transactionId: string,
@@ -325,19 +357,20 @@ export async function recordCompletedSale(
       );
     }
 
-    // 4. Certificate NFT — the product's on-chain half, minted to the account
-    //    that paid. Best-effort like the steps above; the sale stands either
-    //    way. The completed-guard at the top is what makes this run-once.
+    // 4. Certificate NFT — the product's on-chain half, minted to the buyer.
+    //    Best-effort like the steps above; the sale stands either way. The
+    //    completed-guard at the top is what makes this run-once.
     const tokenId = certificateTokenId();
+    const certificateRecipient = certificateAccountFor(payerAccountId, licence.buyer_uaid);
     if (!tokenId) {
       // Not configured is not a failure — run scripts/create-licence-token.ts
       // to enable certificates.
       console.warn(
         `[certificate] HTS_LICENCE_TOKEN_ID is not set — no certificate NFT for licence ${licenceId}`,
       );
-    } else if (!payerAccountId) {
+    } else if (!certificateRecipient) {
       console.warn(
-        `[certificate] settlement carried no payer account — no certificate NFT for licence ${licenceId}`,
+        `[certificate] no Hedera account for the buyer — no certificate NFT for licence ${licenceId}`,
       );
     } else {
       try {
@@ -346,7 +379,7 @@ export async function recordCompletedSale(
           trackId: licence.track_id,
           shares: licence.shares,
           licenceType: licence.licence_type,
-          buyerAccountId: payerAccountId,
+          buyerAccountId: certificateRecipient,
           auditSequenceNumber: result.auditSequenceNumber,
         });
         setLicenceCertificate(db, licenceId, String(minted.serial));

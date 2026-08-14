@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { insertLicence, insertTrack, listTracks, openDatabase } from "../src/data/db.js";
 import { quotePrice } from "../src/data/catalog.js";
+import { getBuyerUaid } from "../src/identity/agent-ids.js";
 import {
   HBAR_USD_RATE,
   hbarToXLayerBaseUnits,
@@ -27,8 +28,14 @@ import { initialisePayments, startX402Server } from "../src/x402/server.js";
  * writes into the catalogue the rest of the project uses.
  */
 
-const DEMO_BUYER_UAID =
-  "did:uaid:demo;proto=a2a;nativeId=hedera:testnet:0.0.9697053;uid=0";
+/**
+ * The buyer this licence is recorded against.
+ *
+ * Read from the registry rather than hard-coded: the UAID names the Hedera
+ * account the certificate is minted to, so a stale one sends the certificate
+ * to an account nobody in this environment controls.
+ */
+const DEMO_BUYER_UAID = getBuyerUaid();
 
 process.env.DATA_DB_PATH ??= "demo-xlayer.db";
 
