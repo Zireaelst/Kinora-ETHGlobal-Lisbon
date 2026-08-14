@@ -32,6 +32,7 @@ The refusals matter as much as the sales. Ask for a political-ad licence and the
 | 💸 **The money path** | [How the payment flow works](#how-the-payment-flow-works) — 402 → sign → 200, with a real settled trace |
 | 🏗 **The system** | [Architecture](#architecture) |
 | 🎬 **Five-minute demo** | [`docs/demo-script.md`](docs/demo-script.md) |
+| 🌍 **Put it online** | [`docs/deploy-railway.md`](docs/deploy-railway.md) — `npm start` serves all three on one port |
 | ✅ **Requirement-by-requirement** | [`docs/bounty-coverage.md`](docs/bounty-coverage.md) — including what we deliberately did *not* build |
 | 🔍 **Don't trust us** | [Verify on HashScan](#verify-it-without-trusting-this-repo) |
 

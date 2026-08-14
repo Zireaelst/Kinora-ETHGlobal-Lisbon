@@ -1,5 +1,6 @@
 import type { AgentCard } from "@a2a-js/sdk";
 import { duplicateInterfacesForLegacy } from "@a2a-js/sdk/compat/v0_3";
+import { envOr } from "../env.js";
 
 /**
  * The seller agent's public manifest.
@@ -12,8 +13,18 @@ import { duplicateInterfacesForLegacy } from "@a2a-js/sdk/compat/v0_3";
  * The card is served at `/.well-known/agent-card.json` by the Phase 4.3 server.
  */
 
-/** Where the seller agent answers A2A JSON-RPC calls. */
-export const SELLER_AGENT_URL = "http://localhost:4000/a2a/jsonrpc";
+/**
+ * Where the seller agent answers A2A JSON-RPC calls.
+ *
+ * This is the address the card hands to strangers, so it has to be the address
+ * a stranger can actually reach — behind a deployment that means the public
+ * origin, not the port this process happens to bind. `SELLER_AGENT_URL`
+ * overrides it; the default keeps local development on :4000.
+ */
+export const SELLER_AGENT_URL = envOr(
+  "SELLER_AGENT_URL",
+  "http://localhost:4000/a2a/jsonrpc",
+);
 
 /**
  * The same endpoint is advertised twice: once for A2A 1.0 (what the installed

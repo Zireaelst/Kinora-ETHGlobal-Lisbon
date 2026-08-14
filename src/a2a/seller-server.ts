@@ -19,8 +19,16 @@ import { SellerExecutor } from "./seller-executor.js";
  *   npx tsx src/a2a/seller-server.ts
  */
 
-/** Port from the URL advertised in the agent card, so the two cannot drift. */
-export const SELLER_PORT = Number(new URL(SELLER_AGENT_URL).port);
+/**
+ * Port from the URL advertised in the agent card, so the two cannot drift.
+ *
+ * A public https:// URL carries no explicit port, and `URL.port` is then the
+ * empty string — which would bind port 0 and listen somewhere nobody was told
+ * about. Behind a deployment the advertised URL and the bound port are
+ * genuinely different things, so fall back to the local default and let the
+ * process decide what to listen on.
+ */
+export const SELLER_PORT = Number(new URL(SELLER_AGENT_URL).port) || 4000;
 
 /** Path the card advertises for JSON-RPC (`/a2a/jsonrpc`). */
 export const SELLER_JSONRPC_PATH = new URL(SELLER_AGENT_URL).pathname;
