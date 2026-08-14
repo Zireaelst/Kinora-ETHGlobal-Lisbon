@@ -104,7 +104,7 @@ flowchart TB
     POST --> A1["HCS · audit entry"]
     POST --> A2["HCS · reputation feedback"]
     POST --> A3["DB · reserve shares"]
-    POST --> A4["HTS · mint certificate → payer"]
+    POST --> A4["HTS · mint certificate → buyer"]
 
     DB[("Encrypted catalogue · SQLite<br/>AES-256-GCM · master refs never leave in plaintext")] --- SELLER
     A1 --> HEDERA
@@ -147,7 +147,7 @@ sequenceDiagram
 
     B->>X: GET /licence/grant?...&licenceId=6
     X->>X: binding gate — does this request match the negotiated row?
-    X-->>B: HTTP 402 + payment-required header<br/>41000000 tinybar to 0.0.9696085
+    X-->>B: HTTP 402 + payment-required header<br/>41000000 tinybar to 0.0.9695366
     B->>B: check quote ≤ agreed max, check balance, sign a Hedera transfer
     B->>X: same GET + payment-signature header
     X->>F: verify + settle
@@ -214,23 +214,28 @@ It is **idempotent**: a completed-guard runs first, so a replay writes no second
 Every number below is from one run of this repo, through the panel, on Hedera testnet:
 
 ```
-buyer  → offers 0.5 ℏ for a sync licence on track 1 — 500 shares (5%), for film
-seller → negotiation: accept
-x402     -> GET http://localhost:4021/licence/grant?trackId=1&shares=500&licenceType=sync&useCase=film&licenceId=6
-x402     <- HTTP 402
-x402        asking 0.41 ℏ (41000000 tinybar, asset 0.0.0) to 0.0.9696085 on hedera:testnet
-x402        signed by 0.0.9697053 — retrying with payment
-x402     <- HTTP 200
-x402     settlement: success=true payer=0.0.9697053
-x402     transaction: 0.0.7162784@1785047564.932543869
-buyer  ← licence granted — 5% of "Harbour Lights, Slower" by Mira Kestrel, master ref released
-hedera   audit trail, reputation and certificate recorded — licence #6 marked completed
+round 1: offered 0.05 ℏ → decline (price_too_low)
+         countering at 0.2 ℏ (the owner's stated floor), budget 1.5 ℏ
+round 2: offered 0.2 ℏ → accept
+x402  -> GET http://localhost:4021/licence/grant?trackId=5&shares=200&licenceType=sync&useCase=documentary&licenceId=4
+x402  <- HTTP 402
+x402     asking 0.3 ℏ (30000000 tinybar, asset 0.0.0) to 0.0.9695366 on hedera:testnet
+x402     asking 0.00084 ℏ (84000 tinybar, asset 0xcb8bf24c…) to 0xff7d4f3c… on eip155:1952
+x402     signed by 0.0.10062841 — retrying with payment
+x402  <- HTTP 200
+x402  settlement: success=true payer=0.0.10062841
+x402  transaction: 0.0.7162784@1786711624.666422291
+hedera   licence 4 completed — HCS seq 19, feedback #7, certificate #5
 ```
 
-- **Payment:** [`0.0.7162784-1785047564-932543869`](https://hashscan.io/testnet/transaction/0.0.7162784-1785047564-932543869) — 0.41 ℏ to the rights holder, no human approval anywhere in it
-- **Audit entry:** sequence `#734` on topic [`0.0.9738154`](https://hashscan.io/testnet/topic/0.0.9738154) — `licence_completed — track 1 · 500 shares (5%) · sync · film`
-- **Attestation:** `validation_request #731` / `validation_response #733, score 100` on the identity topic, written during the same negotiation
-- **Certificate:** serial `#16` in collection [`0.0.9756726`](https://hashscan.io/testnet/token/0.0.9756726), minted to the buyer
+- **Payment:** [`0.0.7162784-1786711624-666422291`](https://hashscan.io/testnet/transaction/0.0.7162784-1786711624-666422291) — 0.3 ℏ to the rights holder, no human approval anywhere in it
+- **Audit entry:** sequence `#19` on topic [`0.0.10062827`](https://hashscan.io/testnet/topic/0.0.10062827) — `licence_completed — track 5 · 200 shares (2%) · sync · documentary`
+- **Attestation:** the compliance `validation_request` / `validation_response, score 100` pair on the identity topic, written during the same negotiation
+- **Certificate:** serial `#5` in collection [`0.0.10062876`](https://hashscan.io/testnet/token/0.0.10062876), minted to the buyer
+
+Note the two `asking` lines: the endpoint quoted both rails and this buyer chose Hedera. That is section 7.
+
+Reproduce the whole thing with `npm run test:e2e` — **22/22 checks**, including that exactly two `licence_completed` events and two feedbacks appear on HCS, counted against a baseline taken at the start of the run.
 
 ### 6. The royalty, and why it has no fallback fee
 
@@ -246,9 +251,47 @@ delivery  treasury → buyer, no value        → no royalty assessed
 resale    buyer → third account for 10 ℏ    → 0.5 ℏ to the rights holder
 ```
 
-Proof: [`0.0.9697053-1785023666-767928814`](https://hashscan.io/testnet/transaction/0.0.9697053-1785023666-767928814) — `assessed_custom_fees` shows `50000000` tinybar to `0.0.9696085`, charged to the account that received the payment. The rights holder was **not a party to that sale**; the script creates a throwaway third account precisely so the royalty cannot be confused with money moving between the two demo accounts. The resale is a **separate verification, not a beat in the demo flow** — nothing in the negotiation path resells anything.
+Proof: [`0.0.10062841-1786711560-010261346`](https://hashscan.io/testnet/transaction/0.0.10062841-1786711560-010261346) — `assessed_custom_fees` shows `50000000` tinybar to `0.0.9695366`, charged to the account that received the payment. The rights holder was **not a party to that sale**; the script creates a throwaway third account precisely so the royalty cannot be confused with money moving between the two demo accounts. The resale is a **separate verification, not a beat in the demo flow** — nothing in the negotiation path resells anything.
 
 **Every certificate the demo issues carries this royalty:** `HTS_LICENCE_TOKEN_ID` points at the royalty-bearing collection, so the NFT a buyer walks away with is the same one that would pay the artist on resale. Check it the way a sceptic would — take a certificate serial off the panel's Licences-sold row and look the token up on the mirror node; `custom_fees.royalty_fees` must be non-empty.
+
+### 7. The same licence, paid on a different chain
+
+A buyer agent holding no HBAR is not a buyer this marketplace should turn away. So the endpoint quotes **two rails in one 402** — `accepts[]` is an array, and the buyer picks which to sign:
+
+```
+<- HTTP 402
+   asking 0.3 ℏ    (30000000 tinybar, asset 0.0.0)         to 0.0.9695366 on hedera:testnet
+   asking 0.00084 ℏ (84000 base units, asset 0xcb8bf24c…)  to 0xff7d4f3c… on eip155:1952
+```
+
+**Only the money moves.** Identity is still an HCS-14 UAID, the audit entry is still written to HCS, and the certificate NFT with its royalty is still minted on HTS — to the account the buyer's *UAID* names, not to whatever address happened to pay. Everything that has to be provable stays on Hedera.
+
+Settled below by **OKX's Agentic Wallet** — an agent wallet outside this repo, against a licence it had never seen:
+
+```
+$ onchainos payment quote "http://…/licence/grant?…&licenceId=5"
+    accepts[0]  exact / hedera:testnet   41000000
+    accepts[1]  exact / eip155:1952        114800     ← 0.1148 USDC_TEST
+$ onchainos payment pay --payment-id pay_f66d… --selected-index 1 --yes
+    status: success
+    result: { title: "Neon Harbour", artist: "Aslan Vega", masterRef: "…", sharePercent: 5 }
+```
+
+| Step | Evidence |
+|---|---|
+| Payment on X Layer | [`0x07095b35…d96af285`](https://www.oklink.com/xlayer-test/tx/0x07095b35b89fff65d15d24ac0958b4fe5c9031e9bb3f4a97440d71f3d96af285) — SUCCESS |
+| Money actually moved | buyer −0.1148, seller +0.1148 USDC_TEST, confirmed by `balanceOf` on both addresses |
+| Licence delivered | HTTP 200 carrying the decrypted master reference |
+| HCS audit entry | topic [`0.0.10062827`](https://hashscan.io/testnet/topic/0.0.10062827), sequence 2 |
+| HCS reputation | topic [`0.0.10062828`](https://hashscan.io/testnet/topic/0.0.10062828), feedback #5 |
+| HTS certificate | [`0.0.10062876`](https://hashscan.io/testnet/token/0.0.10062876) serial 2 → `0.0.10062841`, the registered buyer |
+
+**No contract was written, deployed or called to do this.** The buyer signs an [EIP-3009](https://eips.ethereum.org/EIPS/eip-3009) authorisation and OKX's facilitator submits the transfer — which is why the No-Solidity check at the top still exits 1 with this rail switched on.
+
+The rail is **off by default** (`X402_XLAYER_RAIL`). It needs a payee and OKX facilitator credentials; if either is missing, or the facilitator will not vouch for the network, the rail is dropped with a warning and the endpoint keeps serving Hedera. An optional rail is not allowed to take the required one down.
+
+> Two things the chain had to settle, because the documentation disagreed with it. USDC_TEST is a proxy, so its EIP-3009 selectors live in the implementation — looking at the token address alone finds none. And its EIP-712 domain version is `"2"`, while OKX's own mock merchant advertises `"1"`; a signature built on the advertised value is rejected on-chain. Both were resolved by reproducing `DOMAIN_SEPARATOR()` against the contract — see [`docs/okx-findings.md`](docs/okx-findings.md).
 
 ---
 
@@ -343,13 +386,13 @@ The most convincing check is the panel's fourth pane: it lists the audit trail p
 
 | What | Id |
 |---|---|
-| Rights holder account | [`0.0.9696085`](https://hashscan.io/testnet/account/0.0.9696085) |
-| Buyer account | [`0.0.9697053`](https://hashscan.io/testnet/account/0.0.9697053) |
-| HCS audit topic | [`0.0.9738154`](https://hashscan.io/testnet/topic/0.0.9738154) |
-| HCS identity topic | [`0.0.9749380`](https://hashscan.io/testnet/topic/0.0.9749380) |
-| HTS certificate collection | [`0.0.9756726`](https://hashscan.io/testnet/token/0.0.9756726) |
+| Rights holder account | [`0.0.9695366`](https://hashscan.io/testnet/account/0.0.9695366) |
+| Buyer account | [`0.0.10062841`](https://hashscan.io/testnet/account/0.0.10062841) |
+| HCS audit topic | [`0.0.10062827`](https://hashscan.io/testnet/topic/0.0.10062827) |
+| HCS identity topic | [`0.0.10062828`](https://hashscan.io/testnet/topic/0.0.10062828) |
+| HTS certificate collection | [`0.0.10062876`](https://hashscan.io/testnet/token/0.0.10062876) |
 | A settled licence payment | [`0.0.7162784-1785047564-932543869`](https://hashscan.io/testnet/transaction/0.0.7162784-1785047564-932543869) |
-| The royalty firing on a resale | [`0.0.9697053-1785023666-767928814`](https://hashscan.io/testnet/transaction/0.0.9697053-1785023666-767928814) |
+| The royalty firing on a resale | [`0.0.10062841-1786711560-010261346`](https://hashscan.io/testnet/transaction/0.0.10062841-1786711560-010261346) |
 
 ---
 

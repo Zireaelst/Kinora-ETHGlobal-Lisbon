@@ -130,7 +130,7 @@ Point at the hint line under the form before clicking.
 
 **Do — three things, in this order:**
 
-1. **Audit trail pane.** Click **Refresh**. Point at the newest entry: `licence_completed — 0.0.9697053 · track 1 · 500 shares (5%) · sync · film`.
+1. **Audit trail pane.** Click **Refresh**. Point at the newest entry: `licence_completed — 0.0.10062841 · track 1 · 500 shares (5%) · sync · film`.
    > "This isn't our database. This is read back from Hedera's mirror node — the same source HashScan reads."
 
 2. **Click the topic link** (`topic 0.0.… ↗`). HashScan opens on the consensus topic, showing the same messages.
@@ -172,7 +172,7 @@ flow resells a certificate, so there is nothing on the panel to point a camera a
 It is proven separately by `npm run verify:royalty` (7/7), which delivers a certificate the normal
 way — no royalty, because no value rides along with the delivery — then resells it to a throwaway
 third account for 10 ℏ and confirms 0.5 ℏ reaching the rights holder:
-[`0.0.9697053-1785023666-767928814`](https://hashscan.io/testnet/transaction/0.0.9697053-1785023666-767928814).
+[`0.0.10062841-1786711560-010261346`](https://hashscan.io/testnet/transaction/0.0.10062841-1786711560-010261346).
 
 **If a judge asks "does the artist keep earning after the first sale?"** — that transaction is the
 answer, and the README's "The royalty, and why it has no fallback fee" section explains the design

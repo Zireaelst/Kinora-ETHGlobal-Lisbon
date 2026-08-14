@@ -30,10 +30,10 @@ const STACK_GROUPS = [
 ];
 
 const RESOURCES = [
-  { k: 'Seller account', v: '0.0.9696085' },
-  { k: 'Buyer account', v: '0.0.9697053' },
-  { k: 'HCS identity registry topic', v: '0.0.9749380' },
-  { k: 'HTS licence certificate collection', v: '0.0.9750472 — "Music Licence Certificate" (MLIC)' },
+  { k: 'Seller account', v: '0.0.9695366' },
+  { k: 'Buyer account', v: '0.0.10062841' },
+  { k: 'HCS identity registry topic', v: '0.0.10062828' },
+  { k: 'HTS licence certificate collection', v: '0.0.10062876 — "Music Licence Certificate" (MLIC)' },
   { k: 'HCS audit topic', v: 'configured via HCS_AUDIT_TOPIC_ID' },
   {
     k: 'Repository',
@@ -98,7 +98,7 @@ export default function Architecture() {
                 {
                   tag: 'HTS',
                   title: 'Licence certificate',
-                  desc: 'An NFT minted to the payer once the licence completes.',
+                  desc: 'An NFT minted to the buyer that negotiated, once the licence completes.',
                 },
               ].map((item) => (
                 <div key={item.tag} className="flex gap-3">
