@@ -24,7 +24,13 @@ panel talking to itself.
 ## 1. Create the service
 
 Point Railway at this repo. `railway.json` sets the start command and the health
-check; nothing else needs configuring at build time.
+check; `engines.node` and `.nvmrc` pin the Node version. Nothing else needs
+configuring at build time.
+
+> **Why the version is pinned.** Left to choose, Nixpacks picked Node 18, which
+> `better-sqlite3` publishes no prebuilt binary for — so the build fell through
+> to compiling from source, and failed on a missing Python. On Node 20–24 the
+> prebuilt binary is found and nothing is compiled.
 
 ## 2. Add a volume — before the first real run
 
@@ -80,7 +86,21 @@ Hedera credentials and topic ids (`SELLER_ACCOUNT_ID`, `SELLER_PRIVATE_KEY`,
 catalogue becomes unreadable — carry the same value across, do not generate a
 fresh one.
 
-## 4. Check it from outside
+## 4. Seed the catalogue
+
+A fresh volume holds an empty database, and an agent with nothing to sell
+answers every offer with `unknown_track`. Seed it once, from a local checkout
+pointed at the same environment:
+
+```bash
+DATA_DB_PATH=./catalogue.db npx tsx scripts/seed-catalog.ts
+```
+
+Then copy that file into the volume — or, more simply, run the seed once against
+the deployment through Railway's shell, with `DATA_DB_PATH=/data/catalogue.db`.
+The script refuses to overwrite an existing catalogue unless `FORCE=1`.
+
+## 5. Check it from outside
 
 From somewhere that is not the deployment:
 
@@ -100,7 +120,7 @@ curl -i "https://<your-domain>/licence/grant?trackId=1&shares=500"
 # 403 negotiation_required — the binding gate, before any price is quoted
 ```
 
-## 5. Only then, list it
+## 6. Only then, list it
 
 With a permanent HTTPS endpoint, the ASP registration in
 [`ANALYSIS.md`](../ANALYSIS.md) §4.2 becomes available. Register the service, not
