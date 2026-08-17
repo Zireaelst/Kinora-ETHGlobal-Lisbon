@@ -28,6 +28,7 @@ import {
   xlayerRailEnabled,
   XLAYER_TESTNET,
 } from "./config.js";
+import { envOr } from "../env.js";
 import { createOkxFacilitatorFromEnv } from "./okx-facilitator.js";
 import {
   buildLicenceGrant,
@@ -72,7 +73,16 @@ function requireEnv(name: string): string {
   return value;
 }
 
-const facilitatorUrl = requireEnv("X402_FACILITATOR_URL");
+/**
+ * blocky402 — the facilitator that settles `hedera:testnet`.
+ *
+ * Defaulted rather than required: it is a fixed public endpoint that needs no
+ * signup, the same for every deployment, and making each one restate it only
+ * ever produced a crash on a value nobody was going to change.
+ */
+const facilitatorUrl = envOr("X402_FACILITATOR_URL", "https://api.testnet.blocky402.com");
+
+/** Where HBAR payments land. No default — this one is per-deployment. */
 const payToAccount = requireEnv("X402_PAY_TO_ACCOUNT");
 
 /**

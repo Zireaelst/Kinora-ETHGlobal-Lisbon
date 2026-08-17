@@ -1,11 +1,7 @@
 import "dotenv/config";
 import express from "express";
-import { createSellerApp } from "./a2a/seller-server.js";
-import { SELLER_AGENT_URL } from "./a2a/seller-agent-card.js";
-import { app as x402App, initialisePayments } from "./x402/server.js";
-import { createWebApp } from "./web/server.js";
-import { X402_BASE_URL } from "./x402/config.js";
 import { envNumber, envString } from "./env.js";
+import { assertStartupConfig } from "./startup-check.js";
 
 /**
  * All three services on one port, for a hosted deployment.
@@ -29,34 +25,51 @@ import { envNumber, envString } from "./env.js";
 
 const PORT = envNumber("PORT", 8080);
 
-const app = express();
-
-// Order matters: the panel claims "/", so it is mounted last. Express matches
-// in registration order and a router mounted at "/" would otherwise shadow
-// everything after it.
-app.use(createSellerApp());
-app.use(x402App);
-app.use(createWebApp());
-
-/**
- * Liveness for the platform's health check.
- *
- * Deliberately not `/` — that serves the panel, and a health check that only
- * proves a static file can be read says nothing about whether the agent can
- * still take an offer.
- */
-app.get("/healthz", (_req, res) => {
-  res.json({ ok: true, agent: SELLER_AGENT_URL, x402: X402_BASE_URL });
-});
-
 async function main(): Promise<void> {
+  // Before anything else, and before the imports below. Those modules read
+  // their configuration as they load and throw on the first thing missing, so
+  // a static import here would crash on one variable at a time — five missing
+  // settings, five redeploys. This reports the whole set and stops.
+  assertStartupConfig();
+
+  const [{ createSellerApp }, { SELLER_AGENT_URL }, x402, { createWebApp }, { X402_BASE_URL }] =
+    await Promise.all([
+      import("./a2a/seller-server.js"),
+      import("./a2a/seller-agent-card.js"),
+      import("./x402/server.js"),
+      import("./web/server.js"),
+      import("./x402/config.js"),
+    ]);
+
+  const app = express();
+
+  // Order matters: the panel claims "/", so it is mounted last. Express matches
+  // in registration order and a router mounted at "/" would otherwise shadow
+  // everything after it.
+  app.use(createSellerApp());
+  app.use(x402.app);
+  app.use(createWebApp());
+
+  /**
+   * Liveness for the platform's health check.
+   *
+   * Deliberately not `/` — that serves the panel, and a health check that only
+   * proves a static file can be read says nothing about whether the agent can
+   * still take an offer.
+   */
+  app.get("/healthz", (_req, res) => {
+    res.json({ ok: true, agent: SELLER_AGENT_URL, x402: X402_BASE_URL });
+  });
+
   // Settle the rails before accepting traffic, so the first buyer is not the
   // one who discovers a facilitator is unreachable.
-  await initialisePayments();
+  await x402.initialisePayments();
 
   app.listen(PORT, () => {
     console.log(`Kinora listening on :${PORT}`);
-    console.log(`  agent card   ${SELLER_AGENT_URL.replace("/a2a/jsonrpc", "")}/.well-known/agent-card.json`);
+    console.log(
+      `  agent card   ${SELLER_AGENT_URL.replace("/a2a/jsonrpc", "")}/.well-known/agent-card.json`,
+    );
     console.log(`  a2a jsonrpc  ${SELLER_AGENT_URL}`);
     console.log(`  licence      ${X402_BASE_URL}/licence/grant`);
     console.log(`  catalogue    ${X402_BASE_URL}/catalog`);
