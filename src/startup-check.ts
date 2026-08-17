@@ -89,12 +89,53 @@ export function checkStartupConfig(): StartupReport {
  * Exits rather than throws: this is a configuration answer for whoever is
  * reading deployment logs, and a stack trace would bury it.
  */
+/**
+ * Whether the process can see any configuration at all, and from where.
+ *
+ * Distinguishes the two failures that produce an identical "everything is
+ * missing" list: a handful of variables genuinely not filled in, versus the
+ * service receiving none of them because they were saved against a different
+ * service or environment. If the platform's own variables are present and not
+ * one of ours is, the values were set somewhere this container cannot see —
+ * and no amount of correcting individual names will help.
+ */
+function describeEnvironment(): string[] {
+  const lines: string[] = [];
+
+  const platform = [
+    ["RAILWAY_ENVIRONMENT_NAME", process.env["RAILWAY_ENVIRONMENT_NAME"]],
+    ["RAILWAY_SERVICE_NAME", process.env["RAILWAY_SERVICE_NAME"]],
+    ["RAILWAY_PROJECT_NAME", process.env["RAILWAY_PROJECT_NAME"]],
+  ].filter(([, value]) => value) as [string, string][];
+
+  const ours = [...REQUIRED, ...XLAYER, { name: "HTS_LICENCE_TOKEN_ID" }, { name: "X402_BASE_URL" }]
+    .filter((setting) => envString(setting.name)).length;
+
+  if (platform.length > 0) {
+    lines.push(
+      `Running on Railway — ${platform.map(([k, v]) => `${k.replace("RAILWAY_", "").toLowerCase()}=${v}`).join(", ")}.`,
+    );
+    if (ours === 0) {
+      lines.push(
+        "The platform's own variables are visible but NOT ONE of this project's is —" +
+          " so they are not missing so much as elsewhere. Check they were saved against" +
+          " this service and this environment, and that any project-level shared variable" +
+          " is actually referenced by the service.",
+      );
+    }
+  }
+
+  return lines;
+}
+
 export function assertStartupConfig(): void {
   const { missing, warnings } = checkStartupConfig();
 
   for (const warning of warnings) console.warn(`[config] ${warning}`);
 
   if (missing.length === 0) return;
+
+  for (const line of describeEnvironment()) console.error(`[config] ${line}`);
 
   console.error(
     `\n[config] ${missing.length} required setting${missing.length === 1 ? " is" : "s are"} missing:\n`,
