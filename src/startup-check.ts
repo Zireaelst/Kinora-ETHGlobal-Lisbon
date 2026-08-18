@@ -1,3 +1,5 @@
+import { accessSync, constants, existsSync } from "node:fs";
+import { dirname } from "node:path";
 import { envString } from "./env.js";
 
 /**
@@ -134,6 +136,34 @@ export function checkStartupConfig(): StartupReport {
     const unreachable = unreachableReason(value);
     if (unreachable) {
       warnings.push(`${setting.name} is ${value} — ${unreachable}. ${setting.why}.`);
+    }
+  }
+
+  // A DATA_DB_PATH whose directory is absent is the mounted-volume mistake, and
+  // it surfaces as a stack-trace 500 on every request that touches the
+  // catalogue — long after boot, and nowhere near the cause. Deliberately fatal
+  // rather than self-healing: creating the directory would let the service run
+  // on the container's own filesystem and lose the catalogue, the licences and
+  // the encrypted master references on the next redeploy, silently.
+  const dbPath = envString("DATA_DB_PATH");
+  if (dbPath) {
+    const dir = dirname(dbPath);
+    if (!existsSync(dir)) {
+      invalid.push({
+        name: "DATA_DB_PATH",
+        value: dbPath,
+        why: `the directory ${dir} does not exist — mount a volume there (Railway: service → Variables → Volumes), or point this at a path that does`,
+      });
+    } else {
+      try {
+        accessSync(dir, constants.W_OK);
+      } catch {
+        invalid.push({
+          name: "DATA_DB_PATH",
+          value: dbPath,
+          why: `${dir} exists but is not writable by this process`,
+        });
+      }
     }
   }
 
