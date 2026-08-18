@@ -44,12 +44,54 @@ const XLAYER: RequiredSetting[] = [
 
 export interface StartupReport {
   missing: RequiredSetting[];
+  /** Present but unusable — a placeholder left in, or a malformed URL. */
+  invalid: { name: string; value: string; why: string }[];
   warnings: string[];
+}
+
+/**
+ * Settings that are parsed as URLs the moment the app loads.
+ *
+ * A bad value here does not reach any check: `new URL()` throws during import
+ * and the process dies on a raw TypeError, which names the module rather than
+ * the setting. Validating them first turns that into an answer.
+ */
+const URL_SETTINGS = [
+  { name: "SELLER_AGENT_URL", why: "the address the agent card hands to other agents" },
+  { name: "X402_BASE_URL", why: "the address buyers are sent back to in order to pay" },
+];
+
+/**
+ * Catches a template pasted in without being filled: the angle brackets from
+ * `https://<domain>` survive into the value and produce an invalid URL far
+ * from where anyone would look for the cause.
+ */
+function looksLikePlaceholder(value: string): boolean {
+  return /[<>]/.test(value) || value.includes("your-domain") || value.includes("example.com");
 }
 
 export function checkStartupConfig(): StartupReport {
   const missing = REQUIRED.filter((setting) => !envString(setting.name));
+  const invalid: StartupReport["invalid"] = [];
   const warnings: string[] = [];
+
+  for (const setting of URL_SETTINGS) {
+    const value = envString(setting.name);
+    if (!value) continue;
+    if (looksLikePlaceholder(value)) {
+      invalid.push({
+        name: setting.name,
+        value,
+        why: "still holds the template placeholder — replace it with this deployment's real domain",
+      });
+      continue;
+    }
+    try {
+      new URL(value);
+    } catch {
+      invalid.push({ name: setting.name, value, why: `not a valid URL — ${setting.why}` });
+    }
+  }
 
   const railWanted = ["on", "true", "1"].includes(
     (envString("X402_XLAYER_RAIL") ?? "").toLowerCase(),
@@ -80,7 +122,7 @@ export function checkStartupConfig(): StartupReport {
     );
   }
 
-  return { missing, warnings };
+  return { missing, invalid, warnings };
 }
 
 /**
@@ -129,19 +171,32 @@ function describeEnvironment(): string[] {
 }
 
 export function assertStartupConfig(): void {
-  const { missing, warnings } = checkStartupConfig();
+  const { missing, invalid, warnings } = checkStartupConfig();
 
   for (const warning of warnings) console.warn(`[config] ${warning}`);
 
-  if (missing.length === 0) return;
+  if (missing.length === 0 && invalid.length === 0) return;
 
   for (const line of describeEnvironment()) console.error(`[config] ${line}`);
 
-  console.error(
-    `\n[config] ${missing.length} required setting${missing.length === 1 ? " is" : "s are"} missing:\n`,
-  );
-  for (const setting of missing) {
-    console.error(`  ${setting.name.padEnd(24)} ${setting.why}`);
+  if (invalid.length > 0) {
+    console.error(
+      `\n[config] ${invalid.length} setting${invalid.length === 1 ? " is" : "s are"} set but unusable:\n`,
+    );
+    for (const setting of invalid) {
+      console.error(`  ${setting.name}`);
+      console.error(`    value: ${setting.value}`);
+      console.error(`    ${setting.why}`);
+    }
+  }
+
+  if (missing.length > 0) {
+    console.error(
+      `\n[config] ${missing.length} required setting${missing.length === 1 ? " is" : "s are"} missing:\n`,
+    );
+    for (const setting of missing) {
+      console.error(`  ${setting.name.padEnd(24)} ${setting.why}`);
+    }
   }
   console.error(
     `\nSet them in the deployment's environment (see .env.example, and` +
