@@ -70,6 +70,44 @@ function looksLikePlaceholder(value: string): boolean {
   return /[<>]/.test(value) || value.includes("your-domain") || value.includes("example.com");
 }
 
+/**
+ * Why an address cannot be reached from outside this machine, if it cannot.
+ *
+ * These are the addresses handed to *other* agents, so an unreachable one is
+ * the failure that looks like success: the service runs, every response is
+ * correct, and no stranger can act on any of it. `localhost` at least looks
+ * wrong; a private-network hostname like `x.railway.internal` looks exactly
+ * like a real domain, and would be written on-chain permanently by an ASP
+ * registration before anyone noticed.
+ */
+export function unreachableReason(value: string): string | undefined {
+  let host: string;
+  let protocol: string;
+  try {
+    ({ hostname: host, protocol } = new URL(value));
+  } catch {
+    return undefined; // malformed is reported separately
+  }
+
+  if (host === "localhost" || host === "127.0.0.1" || host === "::1") {
+    return "loopback — reachable only from inside this container";
+  }
+  if (host.endsWith(".railway.internal")) {
+    return "Railway's PRIVATE network — reachable only from inside the project." +
+      " Generate a public domain: Settings → Networking → Public Networking";
+  }
+  if (host.endsWith(".internal") || host.endsWith(".local")) {
+    return "a private-network hostname — not resolvable from the public internet";
+  }
+  if (/^10\.|^192\.168\.|^172\.(1[6-9]|2\d|3[01])\./.test(host)) {
+    return "a private IP address — not routable from the public internet";
+  }
+  if (protocol !== "https:") {
+    return `served over ${protocol.replace(":", "")}, and agents are handed https:// addresses`;
+  }
+  return undefined;
+}
+
 export function checkStartupConfig(): StartupReport {
   const missing = REQUIRED.filter((setting) => !envString(setting.name));
   const invalid: StartupReport["invalid"] = [];
@@ -90,6 +128,12 @@ export function checkStartupConfig(): StartupReport {
       new URL(value);
     } catch {
       invalid.push({ name: setting.name, value, why: `not a valid URL — ${setting.why}` });
+      continue;
+    }
+
+    const unreachable = unreachableReason(value);
+    if (unreachable) {
+      warnings.push(`${setting.name} is ${value} — ${unreachable}. ${setting.why}.`);
     }
   }
 

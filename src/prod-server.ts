@@ -75,21 +75,6 @@ async function main(): Promise<void> {
     console.log(`  catalogue    ${X402_BASE_URL}/catalog`);
     console.log(`  panel        ${X402_BASE_URL}/`);
 
-    // These are what a buyer agent is told to come back to. Pointing at
-    // localhost from a hosted process is the failure that looks like it works:
-    // every response is correct and no stranger can act on any of it.
-    for (const [name, value] of [
-      ["SELLER_AGENT_URL", SELLER_AGENT_URL],
-      ["X402_BASE_URL", X402_BASE_URL],
-    ] as const) {
-      if (value.includes("localhost") || value.includes("127.0.0.1")) {
-        console.warn(
-          `[config] ${name} is ${value} — set it to this deployment's public https:// origin,` +
-            ` or the addresses handed to buyer agents will be unreachable.`,
-        );
-      }
-    }
-
     if (!envString("DATA_DB_PATH")) {
       console.warn(
         `[config] DATA_DB_PATH is unset, so the catalogue lives in the container's filesystem` +
