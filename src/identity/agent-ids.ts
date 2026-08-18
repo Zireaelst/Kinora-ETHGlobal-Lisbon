@@ -56,9 +56,15 @@ export function getSellerUaid(): string {
  * whether the rights holder is willing to license to it.
  */
 export function getApprovedUaids(): string[] {
-  const configured = process.env.APPROVED_UAIDS;
+  const configured = envString("APPROVED_UAIDS");
   if (configured) {
     return configured.split(",").map((uaid) => uaid.trim()).filter(Boolean);
   }
-  return [loadAgentUaids().buyer.uaid];
+  // Falls back through getBuyerUaid rather than straight to the file, so a
+  // deployment that sets BUYER_UAID is not left with an empty allow-list. It
+  // was: agent-uaids.json is written locally and gitignored, so in a container
+  // this reached for a file that does not exist and gate 1 refused every
+  // buyer — with "cannot be verified right now", which reads like a mirror-node
+  // outage rather than a missing setting.
+  return [getBuyerUaid()];
 }

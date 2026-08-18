@@ -188,6 +188,13 @@ export function checkStartupConfig(): StartupReport {
     );
   }
 
+  if (!envString("APPROVED_UAIDS") && !envString("BUYER_UAID")) {
+    warnings.push(
+      "Neither APPROVED_UAIDS nor BUYER_UAID is set — the seller's allow-list falls back to " +
+        "agent-uaids.json, and without that file gate 1 refuses every buyer.",
+    );
+  }
+
   if (!envString("SELLER_UAID") && !envString("BUYER_UAID")) {
     warnings.push(
       "SELLER_UAID / BUYER_UAID are unset — identity falls back to agent-uaids.json, " +
