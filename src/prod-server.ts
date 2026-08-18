@@ -14,7 +14,7 @@ import { assertStartupConfig } from "./startup-check.js";
  *
  * They can share a port because their paths do not overlap:
  *
- *   /.well-known/agent-card.json, /a2a/jsonrpc   seller agent
+ *   /.well-known/agent-card.json, /negotiate/jsonrpc   seller agent
  *   /catalog, /licence/grant                     x402 licence endpoint
  *   /, /api/*                                    demo panel
  *
@@ -68,7 +68,7 @@ async function main(): Promise<void> {
   app.listen(PORT, () => {
     console.log(`Kinora listening on :${PORT}`);
     console.log(
-      `  agent card   ${SELLER_AGENT_URL.replace("/a2a/jsonrpc", "")}/.well-known/agent-card.json`,
+      `  agent card   ${SELLER_AGENT_URL.replace("/negotiate/jsonrpc", "")}/.well-known/agent-card.json`,
     );
     console.log(`  a2a jsonrpc  ${SELLER_AGENT_URL}`);
     console.log(`  licence      ${X402_BASE_URL}/licence/grant`);

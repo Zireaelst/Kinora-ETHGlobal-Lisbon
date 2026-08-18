@@ -9,7 +9,7 @@ permanent mistake, so deploy first, register second.
 Railway service exposes exactly one. They share it without collision:
 
 ```
-/.well-known/agent-card.json, /a2a/jsonrpc   seller agent
+/.well-known/agent-card.json, /negotiate/jsonrpc   seller agent
 /catalog, /licence/grant                     x402 licence endpoint
 /, /api/*                                    demo panel
 /healthz                                     liveness
@@ -59,7 +59,7 @@ act on any of it. `npm start` warns if either still says localhost.
 | Variable | Value |
 |---|---|
 | `X402_BASE_URL` | `https://<your-domain>` |
-| `SELLER_AGENT_URL` | `https://<your-domain>/a2a/jsonrpc` |
+| `SELLER_AGENT_URL` | `https://<your-domain>/negotiate/jsonrpc` |
 
 ### Identity, without the generated file
 

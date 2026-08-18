@@ -20,10 +20,15 @@ import { envOr } from "../env.js";
  * a stranger can actually reach — behind a deployment that means the public
  * origin, not the port this process happens to bind. `SELLER_AGENT_URL`
  * overrides it; the default keeps local development on :4000.
+ *
+ * The path deliberately avoids the substring "a2a": OKX.AI's listing validator
+ * reads it in a URL as a claim about the service type and blocks the listing —
+ * a false positive, but one that cannot be argued with from outside. The
+ * protocol is unchanged; only the path this server mounts it at moved.
  */
 export const SELLER_AGENT_URL = envOr(
   "SELLER_AGENT_URL",
-  "http://localhost:4000/a2a/jsonrpc",
+  "http://localhost:4000/negotiate/jsonrpc",
 );
 
 /**

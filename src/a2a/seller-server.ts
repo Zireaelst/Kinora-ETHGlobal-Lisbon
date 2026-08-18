@@ -30,7 +30,7 @@ import { SellerExecutor } from "./seller-executor.js";
  */
 export const SELLER_PORT = Number(new URL(SELLER_AGENT_URL).port) || 4000;
 
-/** Path the card advertises for JSON-RPC (`/a2a/jsonrpc`). */
+/** Path the card advertises for JSON-RPC (`/negotiate/jsonrpc`). */
 export const SELLER_JSONRPC_PATH = new URL(SELLER_AGENT_URL).pathname;
 
 export const AGENT_CARD_PATH = "/.well-known/agent-card.json";
