@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { ChatGroq } from "@langchain/groq";
 import { z } from "zod";
+import { envOr } from "../env.js";
 import {
   LICENCE_TYPES,
   USE_CASES,
@@ -16,7 +17,23 @@ import {
  * produces this small structured object; it never decides an individual deal.
  */
 
-export const MODEL = "llama-3.3-70b-versatile";
+/**
+ * The model that turns the rights holder's sentence into a policy object.
+ *
+ * Overridable, because a hosted model is not a stable dependency: Groq retired
+ * `llama-3.3-70b-versatile` — the model this project was built on — and the
+ * deployment answered every request with "Could not interpret the owner's
+ * policy", which is the safe reading but leaves the agent unable to sell
+ * anything. `GROQ_MODEL` lets that be fixed by configuration rather than a
+ * release.
+ *
+ * Whatever is chosen must support tool calling: the policy is extracted with
+ * `withStructuredOutput`, and a model without it fails with
+ * "`tool calling` is not supported with this model" rather than a bad answer.
+ * Verified against the current catalogue — openai/gpt-oss-120b, gpt-oss-20b and
+ * qwen/qwen3.6-27b all parse the canonical sentence correctly.
+ */
+export const MODEL = envOr("GROQ_MODEL", "openai/gpt-oss-120b");
 
 /** A track's whole licensing capacity, in basis points. */
 const FULL_CAPACITY = 10000;
